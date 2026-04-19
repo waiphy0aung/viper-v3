@@ -284,6 +284,11 @@ def generate_signal(
 
     if is_monster:
         tp = monster_tp
+        # Validate TP is in the right direction
+        if ind_signal == "long" and tp <= current_price:
+            return None
+        if ind_signal == "short" and tp >= current_price:
+            return None
         rr = abs(tp - current_price) / risk if risk > 0 else 0
         if rr < config.MONSTER_MIN_RR:
             return None

@@ -171,6 +171,7 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
                 symbol=symbol, direction=sig.direction, quality=sig.quality.value,
                 entry=sig.entry, sl=sig.sl, tp=sig.tp,
                 lots=lots, risk_dollars=risk_d, rr=sig.rr, reason=sig.reason,
+                is_monster=sig.is_monster,
             )
             last_signal[symbol] = now
 

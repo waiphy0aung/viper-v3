@@ -122,8 +122,8 @@ DD_ALERT_LEVELS = [0.03, 0.05, 0.07]  # 3%, 5%, 7%
 # =============================================================================
 # EXPECTED PERFORMANCE (for weekly report comparison)
 # =============================================================================
-EXPECTED_WR = 66.7
-EXPECTED_PF = 3.56
+EXPECTED_WR = 51.4    # monster mode funded phase
+EXPECTED_PF = 2.75
 
 # =============================================================================
 # MONSTER MODE — sniper trades with 1:5 to 1:10+ R:R

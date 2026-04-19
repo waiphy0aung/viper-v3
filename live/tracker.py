@@ -53,6 +53,9 @@ class TrackedSignal:
     highest: float = 0.0
     lowest: float = float("inf")
     sl_moved_to_be: bool = False
+    is_monster: bool = False
+    original_sl: float = 0.0
+    partials_done: str = ""  # comma-separated list of completed partial triggers
 
 
 class ForwardTracker:
@@ -94,7 +97,8 @@ class ForwardTracker:
 
     def add_signal(self, symbol: str, direction: str, quality: str,
                    entry: float, sl: float, tp: float, lots: float,
-                   risk_dollars: float, rr: float, reason: str):
+                   risk_dollars: float, rr: float, reason: str,
+                   is_monster: bool = False):
         now = datetime.now(timezone.utc)
         sig = TrackedSignal(
             id=f"{symbol}-{now.strftime('%Y%m%d-%H%M%S')}",
@@ -103,6 +107,7 @@ class ForwardTracker:
             entry=entry, sl=sl, tp=tp, lots=lots,
             risk_dollars=risk_dollars, rr=rr, reason=reason,
             highest=entry, lowest=entry,
+            is_monster=is_monster, original_sl=sl,
         )
         self.open_signals.append(sig)
         self._append_signal_csv(sig)
@@ -143,9 +148,59 @@ class ForwardTracker:
             elif sig.direction == "short" and high >= sig.sl and low <= sig.tp:
                 hit, reason, exit_price = True, "SL", sig.sl
 
-            # Time stop: 20 bars (checked every 5 min, so 20 * 12 = 240 checks ≈ 20 hours)
-            if not hit and sig.bars_checked >= 240:
+            # Time stop: monster = 480 bars × 5min = 40 hours check equiv
+            # Normal = 20 bars × 12 checks = 240 checks
+            time_limit = config.MONSTER_TIME_STOP * 12 if sig.is_monster else 240
+            if not hit and sig.bars_checked >= time_limit:
                 hit, reason, exit_price = True, "TIME", close
+
+            # Monster partial TP at milestones
+            if not hit and sig.is_monster:
+                entry_risk = abs(sig.entry - sig.original_sl) if sig.original_sl else abs(sig.entry - sig.sl)
+                if entry_risk > 0:
+                    best = high if sig.direction == "long" else low
+                    curr_rr = ((best - sig.entry) / entry_risk if sig.direction == "long"
+                              else (sig.entry - best) / entry_risk)
+
+                    done = set(sig.partials_done.split(",")) if sig.partials_done else set()
+                    for trigger_rr, close_pct in config.MONSTER_PARTIALS:
+                        key = str(trigger_rr)
+                        if curr_rr >= trigger_rr and key not in done:
+                            # Partial close
+                            trigger_price = (sig.entry + entry_risk * trigger_rr if sig.direction == "long"
+                                           else sig.entry - entry_risk * trigger_rr)
+                            close_lots = sig.lots * close_pct
+                            cfg_inst = config.INSTRUMENTS.get(sig.symbol, {})
+                            lot_mult = cfg_inst.get("lot_mult", 50)
+                            comm = cfg_inst.get("comm", 3.0)
+                            raw = ((trigger_price - sig.entry) if sig.direction == "long"
+                                  else (sig.entry - trigger_price)) * close_lots * lot_mult
+                            pnl = raw - comm * close_lots
+                            self.equity += pnl
+                            self.results.append({
+                                "id": sig.id + f"-p{trigger_rr}", "symbol": sig.symbol,
+                                "direction": sig.direction, "quality": sig.quality,
+                                "entry": f"{sig.entry:.5f}", "exit_price": f"{trigger_price:.5f}",
+                                "sl": f"{sig.sl:.5f}", "tp": f"{sig.tp:.5f}",
+                                "lots": f"{close_lots:.2f}", "pnl": f"{pnl:.2f}",
+                                "rr_actual": f"{trigger_rr:.1f}", "exit_reason": f"Partial 1:{trigger_rr:.0f}",
+                                "entry_time": sig.timestamp,
+                                "exit_time": datetime.now(timezone.utc).isoformat(),
+                                "bars_held": str(sig.bars_checked),
+                            })
+                            sig.lots -= close_lots
+                            done.add(key)
+                            sig.partials_done = ",".join(sorted(done))
+
+                            # Move SL
+                            if trigger_rr == 3.0:
+                                sig.sl = sig.entry + entry_risk * 1.0 if sig.direction == "long" else sig.entry - entry_risk * 1.0
+                            elif trigger_rr == 5.0:
+                                sig.sl = sig.entry + entry_risk * 3.0 if sig.direction == "long" else sig.entry - entry_risk * 3.0
+
+                            from live.notifier import _send
+                            _send(f"\U0001f4b0 <b>Partial 1:{trigger_rr:.0f}</b> {sig.symbol}\nPnL: ${pnl:.2f} | Lots left: {sig.lots:.2f}")
+                            logger.info(f"Monster partial 1:{trigger_rr:.0f}: {sig.id} ${pnl:.2f}")
 
             # Trailing SL: move to BE at 1:1 — ONLY if no SL/TP hit this bar
             # This ensures the original SL is used for the current bar's check
@@ -153,7 +208,7 @@ class ForwardTracker:
                 sig.highest = max(sig.highest, high)
                 sig.lowest = min(sig.lowest, low)
                 if config.TRAILING_SL_ENABLED and not sig.sl_moved_to_be:
-                    risk = abs(sig.entry - sig.sl)
+                    risk = abs(sig.entry - (sig.original_sl if sig.original_sl else sig.sl))
                     moved = False
                     if sig.direction == "long" and sig.highest >= sig.entry + risk * config.TRAILING_SL_TRIGGER_RR:
                         moved = True

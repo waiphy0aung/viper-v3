@@ -86,6 +86,7 @@ def run_phased():
         tot_comm = 0.0
         phase_start = bar
         blown = False
+        monster_cooldown_until = 0  # bar index when monster cooldown expires
 
         while bar < total:
             ts = tradeable[bar]
@@ -109,10 +110,9 @@ def run_phased():
 
                 close_it, reason, ep = False, "", price
 
-                # Trailing SL to BE at 1:1 — check PREVIOUS bar's high/low
-                # (SL moves after a bar confirms 1:1, not during the same bar)
+                # Trailing SL to BE at 1:1 — use ORIGINAL SL for risk calc
                 if not p.get("sl_at_be") and config.TRAILING_SL_ENABLED:
-                    risk = abs(p["entry"] - p["sl"])
+                    risk = abs(p["entry"] - p.get("original_sl", p["sl"]))
                     prev_high = p.get("highest", p["entry"])
                     prev_low = p.get("lowest", p["entry"])
                     if p["side"] == "long" and prev_high >= p["entry"] + risk * config.TRAILING_SL_TRIGGER_RR:
@@ -150,20 +150,30 @@ def run_phased():
                 if not close_it and bars_held >= time_limit:
                     close_it, reason, ep = True, "Time", price
 
-                # Monster trades: partial TP at milestones
-                if p.get("is_monster") and not close_it:
+                # Monster trades: partial TP at milestones + swing trailing
+                if p.get("is_monster") and not close_it and sym in pos:
                     entry_risk = abs(p["entry"] - p.get("original_sl", p["sl"]))
                     if entry_risk > 0:
-                        current_rr = ((price - p["entry"]) / entry_risk if p["side"] == "long"
-                                     else (p["entry"] - price) / entry_risk)
+                        # Use wick (high for long, low for short) for R:R check
+                        if p["side"] == "long":
+                            best_price = bh
+                        else:
+                            best_price = bl
+                        current_rr = ((best_price - p["entry"]) / entry_risk if p["side"] == "long"
+                                     else (p["entry"] - best_price) / entry_risk)
 
                         for trigger_rr, close_pct in config.MONSTER_PARTIALS:
                             partial_key = f"partial_{trigger_rr}"
                             if current_rr >= trigger_rr and not p.get(partial_key):
-                                # Close portion
+                                # Partial exit at the trigger price, not close
+                                if p["side"] == "long":
+                                    trigger_price = p["entry"] + entry_risk * trigger_rr
+                                else:
+                                    trigger_price = p["entry"] - entry_risk * trigger_rr
+
                                 close_lots = p["lots"] * close_pct
-                                partial_raw = ((price - p["entry"]) if p["side"] == "long"
-                                              else (p["entry"] - price)) * close_lots * cfg["lot_mult"]
+                                partial_raw = ((trigger_price - p["entry"]) if p["side"] == "long"
+                                              else (p["entry"] - trigger_price)) * close_lots * cfg["lot_mult"]
                                 partial_pnl = partial_raw - cfg["comm"] * close_lots
                                 equity += partial_pnl
                                 tot_comm += cfg["comm"] * close_lots
@@ -175,22 +185,23 @@ def run_phased():
 
                                 # Move SL up after partial
                                 if trigger_rr == 3.0:
-                                    new_sl = p["entry"] + entry_risk * 1.0 if p["side"] == "long" else p["entry"] - entry_risk * 1.0
-                                    p["sl"] = new_sl
+                                    p["sl"] = p["entry"] + entry_risk * 1.0 if p["side"] == "long" else p["entry"] - entry_risk * 1.0
                                 elif trigger_rr == 5.0:
-                                    new_sl = p["entry"] + entry_risk * 3.0 if p["side"] == "long" else p["entry"] - entry_risk * 3.0
-                                    p["sl"] = new_sl
+                                    p["sl"] = p["entry"] + entry_risk * 3.0 if p["side"] == "long" else p["entry"] - entry_risk * 3.0
 
-                                if p["lots"] <= 0.001:
-                                    del pos[sym]
+                                if p["lots"] <= 0.005:
+                                    # Position fully closed by partials
+                                    if sym in pos:
+                                        del pos[sym]
                                     break
 
-                    # Monster trailing: every 24 bars, tighten SL to recent swing
-                    if bars_held > 0 and bars_held % config.MONSTER_TRAIL_INTERVAL == 0:
+                    # Monster trailing: every 24 bars, use windowed data (no lookahead)
+                    if sym in pos and bars_held > 0 and bars_held % config.MONSTER_TRAIL_INTERVAL == 0:
                         from core.structure import find_swings
-                        recent = d1h.iloc[max(0, d1h.index.get_loc(ts) - 30):d1h.index.get_loc(ts) + 1]
-                        if len(recent) > 10:
-                            sh, sl_pts = find_swings(recent["high"], recent["low"], 2)
+                        loc_now = d1h.index.get_loc(ts)
+                        trail_window = d1h.iloc[max(0, loc_now - 30):loc_now + 1]
+                        if len(trail_window) > 10:
+                            sh, sl_pts = find_swings(trail_window["high"], trail_window["low"], 2)
                             if p["side"] == "long" and sl_pts:
                                 trail = max(s.price for s in sl_pts[-2:])
                                 if trail > p["sl"]:
@@ -208,6 +219,9 @@ def run_phased():
                     tot_comm += c
                     trades.append({"sym": sym, "pnl": raw - c, "reason": reason,
                                    "quality": p.get("quality", ""), "bars": bars_held})
+                    # Set monster cooldown
+                    if p.get("is_monster"):
+                        monster_cooldown_until = bar + int(config.MONSTER_COOLDOWN_HOURS)
                     del pos[sym]
 
                     if equity <= floor:
@@ -222,7 +236,9 @@ def run_phased():
 
             # --- New entries (max 1 position) ---
             if len(pos) == 0 and not blown:
-                # Seasonal filter removed from here — checked per instrument below
+                # Monster cooldown: wait between trades
+                if bar < monster_cooldown_until:
+                    eq_curve.append(equity); bar += 1; continue
 
                 dd = (daily_start - equity) / daily_start if equity < daily_start else 0
                 if dd >= config.DAILY_DD_LIMIT * 0.8:
