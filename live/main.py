@@ -110,6 +110,13 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
         logger.warning(f"Cooldown activated: {tracker.consecutive_losses} losses → {config.COOLDOWN_HOURS}h")
         return cooldown_until
 
+    # Seasonal filter
+    if config.SEASONAL_FILTER:
+        month = datetime.now(timezone.utc).month
+        if month not in config.SEASONAL_MONTHS:
+            logger.debug(f"Seasonal filter — month {month} not in trading months")
+            return cooldown_until
+
     # Weekend filter
     if is_weekend():
         logger.debug("Weekend — markets closed")

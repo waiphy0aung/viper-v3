@@ -94,6 +94,10 @@ TRAILING_SL_TRIGGER_RR = 1.0  # move SL to BE when price moves 1:1 in favor
 # =============================================================================
 # FILTERS
 # =============================================================================
+# Seasonal: only trade Oct-Mar (Q4/Q1). SP500 chops Apr-Sep.
+SEASONAL_FILTER = True
+SEASONAL_MONTHS = [10, 11, 12, 1, 2, 3]  # Oct through Mar
+
 # Weekend: no signals Fri 20:00 UTC → Sun 22:00 UTC
 WEEKEND_FILTER = True
 

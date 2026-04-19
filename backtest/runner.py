@@ -153,6 +153,10 @@ def run_phased():
 
             # --- New entries (max 1 position) ---
             if len(pos) == 0 and not blown:
+                # Seasonal filter
+                if config.SEASONAL_FILTER and ts.month not in config.SEASONAL_MONTHS:
+                    eq_curve.append(equity); bar += 1; continue
+
                 dd = (daily_start - equity) / daily_start if equity < daily_start else 0
                 if dd >= config.DAILY_DD_LIMIT * 0.8:
                     eq_curve.append(equity); bar += 1; continue
