@@ -47,18 +47,23 @@ class TrackedSignal:
     risk_dollars: float
     rr: float
     reason: str
-    status: str = "OPEN"        # OPEN, TP, SL, TIME, CANCELLED
+    status: str = "OPEN"
     bars_checked: int = 0
     highest: float = 0.0
     lowest: float = float("inf")
+    sl_moved_to_be: bool = False
 
 
 class ForwardTracker:
     def __init__(self):
         self.open_signals: list[TrackedSignal] = []
         self.results: list[dict] = []
+        self.equity: float = config.ACCOUNT_SIZE
+        self.dd_alerts_sent: set[float] = set()
         self._load_open()
         self._load_results()
+        # Recalculate equity from results
+        self.equity = config.ACCOUNT_SIZE + sum(float(r["pnl"]) for r in self.results)
         logger.info(f"Tracker: {len(self.open_signals)} open, {len(self.results)} completed")
 
     def _load_open(self):
@@ -112,6 +117,22 @@ class ForwardTracker:
             sig.bars_checked += 1
             sig.highest = max(sig.highest, high)
             sig.lowest = min(sig.lowest, low)
+
+            # Trailing SL: move to breakeven at 1:1 R:R
+            if config.TRAILING_SL_ENABLED and not sig.sl_moved_to_be:
+                risk = abs(sig.entry - sig.sl)
+                if sig.direction == "long" and sig.highest >= sig.entry + risk * config.TRAILING_SL_TRIGGER_RR:
+                    sig.sl = sig.entry
+                    sig.sl_moved_to_be = True
+                    from live.notifier import send_trailing_sl
+                    send_trailing_sl(sig.symbol, sig.direction, sig.sl)
+                    logger.info(f"Trailing SL → BE: {sig.id}")
+                elif sig.direction == "short" and sig.lowest <= sig.entry - risk * config.TRAILING_SL_TRIGGER_RR:
+                    sig.sl = sig.entry
+                    sig.sl_moved_to_be = True
+                    from live.notifier import send_trailing_sl
+                    send_trailing_sl(sig.symbol, sig.direction, sig.sl)
+                    logger.info(f"Trailing SL → BE: {sig.id}")
 
             hit = False
             reason = ""
@@ -181,8 +202,20 @@ class ForwardTracker:
         self._append_result_csv(result)
         self._update_signal_status(sig.id, reason)
 
-        emoji = "\U0001f4b0" if pnl > 0 else "\U0001f4a5"
-        logger.info(f"{emoji} Closed: {sig.id} → {reason} @ {exit_price:.2f} PnL=${pnl:.2f}")
+        # Update equity
+        self.equity += pnl
+
+        # Progress toward Phase 1
+        target = config.ACCOUNT_SIZE * config.PROFIT_TARGET_PHASE1
+        progress = max(0, (self.equity - config.ACCOUNT_SIZE) / target * 100) if target > 0 else 0
+
+        # Send close notification
+        from live.notifier import send_close
+        send_close(sig.symbol, sig.direction, sig.entry, exit_price,
+                   pnl, reason, self.equity, progress)
+
+        logger.info(f"{'WIN' if pnl > 0 else 'LOSS'}: {sig.id} → {reason} "
+                    f"@ {exit_price:.2f} PnL=${pnl:.2f} Equity=${self.equity:.2f}")
 
         return pnl
 
@@ -246,6 +279,31 @@ class ForwardTracker:
         gw = sum(float(r["pnl"]) for r in self.results if float(r["pnl"]) > 0)
         gl = abs(sum(float(r["pnl"]) for r in self.results if float(r["pnl"]) < 0))
         return gw / gl if gl > 0 else float("inf") if gw > 0 else 0
+
+    @property
+    def consecutive_losses(self) -> int:
+        count = 0
+        for r in reversed(self.results):
+            if float(r["pnl"]) < 0:
+                count += 1
+            else:
+                break
+        return count
+
+    @property
+    def drawdown_pct(self) -> float:
+        if self.equity >= config.ACCOUNT_SIZE:
+            return 0
+        return (1 - self.equity / config.ACCOUNT_SIZE) * 100
+
+    def check_dd_alerts(self):
+        from live.notifier import send_dd_alert
+        for level in config.DD_ALERT_LEVELS:
+            level_pct = level * 100
+            if self.drawdown_pct >= level_pct and level not in self.dd_alerts_sent:
+                send_dd_alert(self.drawdown_pct, self.equity)
+                self.dd_alerts_sent.add(level)
+                logger.warning(f"DD alert sent: {self.drawdown_pct:.1f}%")
 
     def summary_text(self) -> str:
         if not self.results:

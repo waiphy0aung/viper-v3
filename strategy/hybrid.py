@@ -42,6 +42,7 @@ class Signal:
     rr: float
     reason: str
     symbol: str
+    bias_info: str = ""   # "W=BULL | D=BULL | 4H=BULL"
 
 
 def _check_indicator_signal(h: pd.Series, l: pd.Series, o: pd.Series,
@@ -265,8 +266,11 @@ def generate_signal(
         parts.append("rejection")
     parts.append(f"[{quality.value}]")
 
+    bias_info = f"D={d.bias.value} | 4H={h4.bias.value}"
+
     return Signal(
         direction=ind_signal, entry=fill, sl=sl, tp=tp,
         quality=quality, confidence=confidence, rr=rr,
         reason=" | ".join(parts), symbol=symbol,
+        bias_info=bias_info,
     )

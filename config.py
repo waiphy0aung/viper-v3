@@ -85,5 +85,35 @@ MIN_RR = 1.5
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# =============================================================================
+# TRAILING SL
+# =============================================================================
+TRAILING_SL_ENABLED = True
+TRAILING_SL_TRIGGER_RR = 1.0  # move SL to BE when price moves 1:1 in favor
+
+# =============================================================================
+# FILTERS
+# =============================================================================
+# Weekend: no signals Fri 20:00 UTC → Sun 22:00 UTC
+WEEKEND_FILTER = True
+
+# News: block NFP (1st Friday 12-14 UTC) + FOMC (3rd Wednesday 18-20 UTC)
+NEWS_FILTER = True
+
+# Cooldown: pause 4h after 2 consecutive losses
+COOLDOWN_AFTER_LOSSES = 2
+COOLDOWN_HOURS = 4
+
+# =============================================================================
+# DD ALERTS — Telegram alerts at these thresholds (one-time per level)
+# =============================================================================
+DD_ALERT_LEVELS = [0.03, 0.05, 0.07]  # 3%, 5%, 7%
+
+# =============================================================================
+# EXPECTED PERFORMANCE (for weekly report comparison)
+# =============================================================================
+EXPECTED_WR = 66.7
+EXPECTED_PF = 3.56
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"
