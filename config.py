@@ -63,12 +63,12 @@ VOLUME_MULTIPLIER = 1.3
 # =============================================================================
 # HYBRID STRATEGY
 # =============================================================================
-# Indicator signal MUST be at an SMC zone to trigger
-REQUIRE_SMC_ZONE = True
+# SMC zones boost confidence but don't block
+REQUIRE_SMC_ZONE = False
 
-# If no SMC zone, still allow indicator signal with reduced confidence
+# Indicator-only signals are the primary method
 ALLOW_INDICATOR_ONLY = True
-INDICATOR_ONLY_CONFIDENCE = 0.4     # 40% confidence (smaller lots)
+INDICATOR_ONLY_CONFIDENCE = 0.3     # 30% confidence — small exploratory position
 SMC_ZONE_CONFIDENCE = 0.8           # 80% confidence (bigger lots)
 SMC_ZONE_REJECTION_CONFIDENCE = 1.0 # 100% confidence (full lots)
 

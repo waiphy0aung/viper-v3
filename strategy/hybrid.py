@@ -181,12 +181,13 @@ def generate_signal(
     if daily_opposes:
         return None
 
-    # Step 3: Premium/Discount
+    # Step 3: Premium/Discount — reduces confidence, doesn't block
+    pd_penalty = 1.0
     if h4.dealing_range:
         if ind_signal == "long" and h4.dealing_range.is_premium(current_price):
-            return None
+            pd_penalty = 0.6  # in premium zone for long — lower confidence
         if ind_signal == "short" and h4.dealing_range.is_discount(current_price):
-            return None
+            pd_penalty = 0.6
 
     # Step 4: Find SMC zone at current price
     h4_obs = find_order_blocks(df_4h["high"], df_4h["low"], df_4h["open"], df_4h["close"], h4.breaks, 15)
@@ -212,9 +213,10 @@ def generate_signal(
     else:
         return None
 
-    # Boost confidence when daily agrees
+    # Modifiers
     if daily_agrees:
         confidence = min(1.0, confidence * 1.2)
+    confidence *= pd_penalty
 
     # SL/TP
     atr_val = float(atr(df_1h["high"], df_1h["low"], df_1h["close"], 14).iloc[-1])
