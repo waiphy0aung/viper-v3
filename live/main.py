@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from live.data import DataFeed
 from live.notifier import send_signal, send_startup, send_error
+from live.tracker import ForwardTracker
 from strategy.hybrid import generate_signal
 
 
@@ -42,10 +43,31 @@ def in_session(symbol: str) -> bool:
     return any(s <= hour < e for s, e in windows) if windows else True
 
 
-def run_cycle(data: DataFeed, last_signal: dict):
+def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker):
+    # Step 1: Check open signals against current prices
+    prices = {}
+    for symbol in config.INSTRUMENTS:
+        try:
+            df = data.fetch_1h(symbol, 5)
+            if len(df) > 0:
+                prices[symbol] = (
+                    float(df["close"].iloc[-1]),
+                    float(df["high"].iloc[-1]),
+                    float(df["low"].iloc[-1]),
+                )
+        except Exception:
+            pass
+
+    tracker.check_signals(prices)
+
+    # Step 2: Scan for new signals
     for symbol in config.INSTRUMENTS:
         try:
             if not in_session(symbol):
+                continue
+
+            # Don't open new if we already have an open signal on this symbol
+            if any(s.symbol == symbol for s in tracker.open_signals):
                 continue
 
             df_1h = data.fetch_1h(symbol)
@@ -62,7 +84,6 @@ def run_cycle(data: DataFeed, last_signal: dict):
             now = time.time()
             last = last_signal.get(symbol, 0)
             if now - last < 7200:
-                logger.debug(f"{symbol}: cooldown — skipping")
                 continue
 
             # Lot sizing
@@ -76,11 +97,17 @@ def run_cycle(data: DataFeed, last_signal: dict):
             if lots < 0.01:
                 continue
 
+            # Send signal + track it
             send_signal(sig, lots, risk_d)
-            last_signal[symbol] = now
+            tracker.add_signal(
+                symbol=symbol, direction=sig.direction, quality=sig.quality.value,
+                entry=sig.entry, sl=sig.sl, tp=sig.tp,
+                lots=lots, risk_dollars=risk_d, rr=sig.rr, reason=sig.reason,
+            )
 
+            last_signal[symbol] = now
             logger.info(f"SIGNAL: {sig.direction.upper()} {symbol} [{sig.quality.value}] "
-                        f"@ {sig.entry:.2f} SL={sig.sl:.2f} TP={sig.tp:.2f} R:R=1:{sig.rr:.1f}")
+                        f"@ {sig.entry:.2f} SL={sig.sl:.2f} TP={sig.tp:.2f}")
 
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
@@ -97,7 +124,9 @@ def main():
     logger.info("=" * 50)
 
     data = DataFeed()
+    tracker = ForwardTracker()
     last_signal: dict[str, float] = {}
+    last_summary_date = None
 
     send_startup()
 
@@ -105,10 +134,19 @@ def main():
 
     while True:
         try:
-            run_cycle(data, last_signal)
-            errors = 0
+            now = datetime.now(timezone.utc)
 
-            # Scan every 5 minutes (1H candles, no need for 60s)
+            run_cycle(data, last_signal, tracker)
+
+            # Daily summary at 21:00 UTC
+            if now.hour == 21 and last_summary_date != now.date():
+                from live.notifier import _send
+                summary = tracker.summary_text()
+                _send(f"\U0001f4ca <b>Daily Forward Test</b>\n\n<pre>{summary}</pre>")
+                last_summary_date = now.date()
+                logger.info(f"Daily summary:\n{summary}")
+
+            errors = 0
             time.sleep(300)
 
         except KeyboardInterrupt:
