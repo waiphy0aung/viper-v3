@@ -23,12 +23,19 @@ PROFIT_TARGET_PHASE2 = 0.05
 # =============================================================================
 # INSTRUMENTS — validated profitable over 730 days
 # =============================================================================
-# SP500 only — 75% WR, +$390 over 560 days. Only proven winner.
+# Seasonal rotation: SP500 Oct-Mar, US30 Apr-Sep
 INSTRUMENTS = {
     "SP500": {
         "ticker": "ES=F", "spread": 0.5, "lot_mult": 50,
         "min_sl": 10.0, "comm": 3.0,
         "session": [(13, 20)],
+        "months": [10, 11, 12, 1, 2, 3],  # Oct-Mar
+    },
+    "US30": {
+        "ticker": "YM=F", "spread": 2.0, "lot_mult": 5,
+        "min_sl": 30.0, "comm": 3.0,
+        "session": [(13, 20)],
+        "months": [4, 5, 6, 7, 8, 9],     # Apr-Sep
     },
 }
 
@@ -94,9 +101,8 @@ TRAILING_SL_TRIGGER_RR = 1.0  # move SL to BE when price moves 1:1 in favor
 # =============================================================================
 # FILTERS
 # =============================================================================
-# Seasonal: only trade Oct-Mar (Q4/Q1). SP500 chops Apr-Sep.
+# Seasonal rotation: each instrument has its own trading months
 SEASONAL_FILTER = True
-SEASONAL_MONTHS = [10, 11, 12, 1, 2, 3]  # Oct through Mar
 
 # Weekend: no signals Fri 20:00 UTC → Sun 22:00 UTC
 WEEKEND_FILTER = True

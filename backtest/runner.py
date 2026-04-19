@@ -153,9 +153,7 @@ def run_phased():
 
             # --- New entries (max 1 position) ---
             if len(pos) == 0 and not blown:
-                # Seasonal filter
-                if config.SEASONAL_FILTER and ts.month not in config.SEASONAL_MONTHS:
-                    eq_curve.append(equity); bar += 1; continue
+                # Seasonal filter removed from here — checked per instrument below
 
                 dd = (daily_start - equity) / daily_start if equity < daily_start else 0
                 if dd >= config.DAILY_DD_LIMIT * 0.8:
@@ -167,7 +165,11 @@ def run_phased():
                 for sym in config.INSTRUMENTS:
                     if not in_session(sym, hour):
                         continue
+                    # Seasonal per-instrument
                     cfg = config.INSTRUMENTS[sym]
+                    inst_months = cfg.get("months")
+                    if config.SEASONAL_FILTER and inst_months and ts.month not in inst_months:
+                        continue
                     d = all_data[sym]
                     d1h = d["1h"]
                     if ts not in d1h.index:

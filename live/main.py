@@ -110,12 +110,7 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
         logger.warning(f"Cooldown activated: {tracker.consecutive_losses} losses → {config.COOLDOWN_HOURS}h")
         return cooldown_until
 
-    # Seasonal filter
-    if config.SEASONAL_FILTER:
-        month = datetime.now(timezone.utc).month
-        if month not in config.SEASONAL_MONTHS:
-            logger.debug(f"Seasonal filter — month {month} not in trading months")
-            return cooldown_until
+    # Seasonal filter checked per instrument in the scan loop below
 
     # Weekend filter
     if is_weekend():
@@ -132,6 +127,12 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
         try:
             if not in_session(symbol):
                 continue
+
+            # Seasonal: check if this instrument trades this month
+            if config.SEASONAL_FILTER:
+                inst_months = config.INSTRUMENTS[symbol].get("months")
+                if inst_months and datetime.now(timezone.utc).month not in inst_months:
+                    continue
 
             if any(s.symbol == symbol for s in tracker.open_signals):
                 continue
