@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            INSTALL_DIR="/root/.local/share/.viper-v3"
+
+            # First time setup
+            if [ ! -d "$INSTALL_DIR/.git" ]; then
+              apt-get update -qq
+              apt-get install -y -qq python3 python3-pip python3-venv git > /dev/null 2>&1
+              mkdir -p "$INSTALL_DIR"
+              cd "$INSTALL_DIR"
+              git clone https://github.com/${{ github.repository }}.git .
+              python3 -m venv venv
+              source venv/bin/activate
+              pip install -q -r requirements.txt
+              cp .env.example .env
+              echo "!! Edit .env with your Telegram keys: nano $INSTALL_DIR/.env"
+            fi
+
+            # Update
+            cd "$INSTALL_DIR"
+            git fetch origin
+            git reset --hard origin/main
+            source venv/bin/activate
+            pip install -q -r requirements.txt
+
+            # Clear cache
+            find . -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+
+            # Service
+            cat > /etc/systemd/system/viper-v3.service << 'SVCEOF'
+            [Unit]
+            Description=Viper v3
+            After=network-online.target
+
+            [Service]
+            Type=simple
+            User=root
+            WorkingDirectory=/root/.local/share/.viper-v3
+            ExecStart=/root/.local/share/.viper-v3/venv/bin/python -u -m live.main
+            EnvironmentFile=/root/.local/share/.viper-v3/.env
+            Restart=on-failure
+            RestartSec=30
+            StandardOutput=journal
+            StandardError=journal
+            SyslogIdentifier=viper-v3
+            PrivateTmp=true
+
+            [Install]
+            WantedBy=multi-user.target
+            SVCEOF
+
+            systemctl daemon-reload
+            systemctl enable viper-v3
+            systemctl restart viper-v3
+            echo "Deployed: $(git log --oneline -1)"
