@@ -125,5 +125,41 @@ DD_ALERT_LEVELS = [0.03, 0.05, 0.07]  # 3%, 5%, 7%
 EXPECTED_WR = 66.7
 EXPECTED_PF = 3.56
 
+# =============================================================================
+# MONSTER MODE — sniper trades with 1:5 to 1:10+ R:R
+# =============================================================================
+# When enabled: A/A+ only, weekly TP targets, hold for days, partial at milestones
+MONSTER_MODE = True
+
+# Quality gate — only these grades allowed in monster mode
+MONSTER_GRADES = ["A"]  # A+ rejection requirement hurts more than helps
+
+# TP targeting: weekly draw on liquidity (PWH/PWL), not daily
+# Minimum R:R to take a trade — if weekly target doesn't give this, skip
+MONSTER_MIN_RR = 4.0
+
+# Hold time: up to 20 days (480 bars on 1H) — let the trade breathe
+MONSTER_TIME_STOP = 480
+
+# Partial TP milestones: close portions as price moves in favor
+# [R:R trigger, % of position to close]
+MONSTER_PARTIALS = [
+    (3.0, 0.30),   # at 1:3 → close 30%, move SL to 1:1
+    (5.0, 0.30),   # at 1:5 → close 30%, move SL to 1:3
+    # remaining 40% runs to full TP or trailing SL
+]
+
+# Risk: bigger position on A+ (sniper precision)
+MONSTER_RISK = {
+    "A+": 0.03,    # 3% — full conviction
+    "A":  0.02,    # 2% — high conviction
+}
+
+# Trailing after partials: move SL to last swing low/high every 24 bars
+MONSTER_TRAIL_INTERVAL = 24
+
+# Cooldown between monster trades: 3 days minimum
+MONSTER_COOLDOWN_HOURS = 72
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"

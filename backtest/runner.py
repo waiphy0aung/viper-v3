@@ -145,9 +145,60 @@ def run_phased():
                 elif p["side"] == "short" and bh >= p["sl"] and bl <= p["tp"]:
                     close_it, reason, ep = True, "SL", p["sl"]
 
-                # Time: 20 bars on 1H
-                if not close_it and bars_held >= 20:
+                # Time stop
+                time_limit = config.MONSTER_TIME_STOP if config.MONSTER_MODE else 20
+                if not close_it and bars_held >= time_limit:
                     close_it, reason, ep = True, "Time", price
+
+                # Monster mode: partial TP at milestones
+                if config.MONSTER_MODE and not close_it:
+                    entry_risk = abs(p["entry"] - p.get("original_sl", p["sl"]))
+                    if entry_risk > 0:
+                        current_rr = ((price - p["entry"]) / entry_risk if p["side"] == "long"
+                                     else (p["entry"] - price) / entry_risk)
+
+                        for trigger_rr, close_pct in config.MONSTER_PARTIALS:
+                            partial_key = f"partial_{trigger_rr}"
+                            if current_rr >= trigger_rr and not p.get(partial_key):
+                                # Close portion
+                                close_lots = p["lots"] * close_pct
+                                partial_raw = ((price - p["entry"]) if p["side"] == "long"
+                                              else (p["entry"] - price)) * close_lots * cfg["lot_mult"]
+                                partial_pnl = partial_raw - cfg["comm"] * close_lots
+                                equity += partial_pnl
+                                tot_comm += cfg["comm"] * close_lots
+                                trades.append({"sym": sym, "pnl": partial_pnl,
+                                              "reason": f"Partial 1:{trigger_rr:.0f}",
+                                              "quality": p.get("quality", ""), "bars": bars_held})
+                                p["lots"] -= close_lots
+                                p[partial_key] = True
+
+                                # Move SL up after partial
+                                if trigger_rr == 3.0:
+                                    new_sl = p["entry"] + entry_risk * 1.0 if p["side"] == "long" else p["entry"] - entry_risk * 1.0
+                                    p["sl"] = new_sl
+                                elif trigger_rr == 5.0:
+                                    new_sl = p["entry"] + entry_risk * 3.0 if p["side"] == "long" else p["entry"] - entry_risk * 3.0
+                                    p["sl"] = new_sl
+
+                                if p["lots"] <= 0.001:
+                                    del pos[sym]
+                                    break
+
+                    # Monster trailing: every 24 bars, tighten SL to recent swing
+                    if bars_held > 0 and bars_held % config.MONSTER_TRAIL_INTERVAL == 0:
+                        from core.structure import find_swings
+                        recent = d1h.iloc[max(0, d1h.index.get_loc(ts) - 30):d1h.index.get_loc(ts) + 1]
+                        if len(recent) > 10:
+                            sh, sl_pts = find_swings(recent["high"], recent["low"], 2)
+                            if p["side"] == "long" and sl_pts:
+                                trail = max(s.price for s in sl_pts[-2:])
+                                if trail > p["sl"]:
+                                    p["sl"] = trail
+                            elif p["side"] == "short" and sh:
+                                trail = min(s.price for s in sh[-2:])
+                                if trail < p["sl"]:
+                                    p["sl"] = trail
 
                 if close_it:
                     raw = ((ep - p["entry"]) if p["side"] == "long" else
@@ -215,8 +266,9 @@ def run_phased():
 
                     pos[sym] = {
                         "side": sig.direction, "entry": sig.entry,
-                        "sl": sig.sl, "tp": sig.tp,
+                        "sl": sig.sl, "tp": sig.tp, "original_sl": sig.sl,
                         "lots": lots, "bar": bar, "quality": sig.quality.value,
+                        "highest": sig.entry, "lowest": sig.entry,
                     }
                     break
 

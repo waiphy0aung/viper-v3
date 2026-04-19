@@ -214,10 +214,19 @@ def generate_signal(
     else:
         return None
 
-    # Modifiers
-    if daily_agrees:
-        confidence = min(1.0, confidence * 1.2)
-    confidence *= pd_penalty
+    # Monster mode: only take allowed grades
+    if config.MONSTER_MODE and quality.value not in config.MONSTER_GRADES:
+        return None
+
+    # Monster mode: override confidence with monster risk
+    if config.MONSTER_MODE:
+        confidence = config.MONSTER_RISK.get(quality.value, 0.02) / config.BASE_RISK_PCT
+        confidence = min(1.5, confidence)  # allow up to 1.5x base risk
+    else:
+        # Normal modifiers
+        if daily_agrees:
+            confidence = min(1.0, confidence * 1.2)
+        confidence *= pd_penalty
 
     # SL/TP
     atr_val = float(atr(df_1h["high"], df_1h["low"], df_1h["close"], 14).iloc[-1])
@@ -245,16 +254,39 @@ def generate_signal(
     if risk < min_sl * 0.3:
         return None
 
-    # TP from session levels or 3x risk
+    # TP targeting
     sessions = get_session_levels(df_1h)
-    if ind_signal == "long":
-        tp = sessions.pdh if sessions.pdh > current_price and abs(sessions.pdh - current_price) >= risk * 1.5 else current_price + risk * 3
-    else:
-        tp = sessions.pdl if sessions.pdl < current_price and abs(current_price - sessions.pdl) >= risk * 1.5 else current_price - risk * 3
 
-    rr = abs(tp - current_price) / risk if risk > 0 else 0
-    if rr < config.MIN_RR:
-        return None
+    if config.MONSTER_MODE and quality != Quality.B:
+        # Monster mode: TP at weekly target (PWH/PWL) for maximum R:R
+        if ind_signal == "long":
+            # PWH is the weekly draw — where the big money sits
+            candidates = [sessions.pwh]
+            if sessions.pdh > current_price:
+                candidates.append(sessions.pdh)
+            # Pick the farthest target that's realistic
+            valid = [t for t in candidates if t > current_price and abs(t - current_price) >= risk * config.MONSTER_MIN_RR]
+            tp = max(valid) if valid else current_price + risk * config.MONSTER_MIN_RR
+        else:
+            candidates = [sessions.pwl]
+            if sessions.pdl < current_price:
+                candidates.append(sessions.pdl)
+            valid = [t for t in candidates if t < current_price and abs(current_price - t) >= risk * config.MONSTER_MIN_RR]
+            tp = min(valid) if valid else current_price - risk * config.MONSTER_MIN_RR
+
+        rr = abs(tp - current_price) / risk if risk > 0 else 0
+        if rr < config.MONSTER_MIN_RR:
+            return None  # no monster target available — skip
+    else:
+        # Normal mode: PDH/PDL or 3x risk
+        if ind_signal == "long":
+            tp = sessions.pdh if sessions.pdh > current_price and abs(sessions.pdh - current_price) >= risk * 1.5 else current_price + risk * 3
+        else:
+            tp = sessions.pdl if sessions.pdl < current_price and abs(current_price - sessions.pdl) >= risk * 1.5 else current_price - risk * 3
+
+        rr = abs(tp - current_price) / risk if risk > 0 else 0
+        if rr < config.MIN_RR:
+            return None
 
     fill = current_price + spread if ind_signal == "long" else current_price - spread
 
