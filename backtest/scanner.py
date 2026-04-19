@@ -5,6 +5,8 @@ Instrument scanner — test every available pair with the hybrid strategy.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import logging
 import time
 import sys

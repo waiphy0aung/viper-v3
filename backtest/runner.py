@@ -1,6 +1,7 @@
 """
 Unified backtester — single file, all instruments, phased simulation.
 Uses the hybrid strategy. Wick-based SL/TP. Spread + commission.
+Trailing SL to breakeven at 1:1 R:R (matches live behavior).
 """
 
 from __future__ import annotations
@@ -107,6 +108,23 @@ def run_phased():
                 bars_held = bar - p["bar"]
 
                 close_it, reason, ep = False, "", price
+
+                # Trailing SL to BE at 1:1 — check PREVIOUS bar's high/low
+                # (SL moves after a bar confirms 1:1, not during the same bar)
+                if not p.get("sl_at_be") and config.TRAILING_SL_ENABLED:
+                    risk = abs(p["entry"] - p["sl"])
+                    prev_high = p.get("highest", p["entry"])
+                    prev_low = p.get("lowest", p["entry"])
+                    if p["side"] == "long" and prev_high >= p["entry"] + risk * config.TRAILING_SL_TRIGGER_RR:
+                        p["sl"] = p["entry"]
+                        p["sl_at_be"] = True
+                    elif p["side"] == "short" and prev_low <= p["entry"] - risk * config.TRAILING_SL_TRIGGER_RR:
+                        p["sl"] = p["entry"]
+                        p["sl_at_be"] = True
+
+                # Track high/low for trailing (used next bar)
+                p["highest"] = max(p.get("highest", p["entry"]), bh)
+                p["lowest"] = min(p.get("lowest", p["entry"]), bl)
 
                 # SL on wick
                 if p["side"] == "long" and bl <= p["sl"]:
@@ -219,10 +237,11 @@ def run_phased():
         wr = wins / len(trades) * 100 if trades else 0
 
         peak = eq_curve[0]
-        mdd = max((peak - eq) / peak * 100 if peak > 0 else 0
-                  for eq in eq_curve) if eq_curve else 0
+        mdd = 0
         for eq in eq_curve:
             peak = max(peak, eq)
+            dd = (peak - eq) / peak * 100 if peak > 0 else 0
+            mdd = max(mdd, dd)
 
         status = "BLOWN" if blown else ("PASSED" if target and pnl >= target else "RUNNING" if not target else "NOT YET")
 

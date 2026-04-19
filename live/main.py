@@ -76,8 +76,8 @@ def is_news_blocked() -> bool:
 
 
 def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
-              cooldown_until: float):
-    """Returns updated cooldown_until."""
+              cooldown_until: float, cooldown_loss_count: int):
+    """Returns (cooldown_until, cooldown_loss_count)."""
 
     # Check open signals
     prices = {}
@@ -101,14 +101,20 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
     if now < cooldown_until:
         remaining = int((cooldown_until - now) / 60)
         logger.debug(f"Cooldown: {remaining}m remaining")
-        return cooldown_until
+        return cooldown_until, cooldown_loss_count
 
-    # Check consecutive losses
-    if tracker.consecutive_losses >= config.COOLDOWN_AFTER_LOSSES:
+    # Check consecutive losses — only trigger if NEW losses since last cooldown
+    current_losses = tracker.consecutive_losses
+    if current_losses >= config.COOLDOWN_AFTER_LOSSES and current_losses > cooldown_loss_count:
         cooldown_until = now + config.COOLDOWN_HOURS * 3600
-        send_cooldown(tracker.consecutive_losses, config.COOLDOWN_HOURS)
-        logger.warning(f"Cooldown activated: {tracker.consecutive_losses} losses → {config.COOLDOWN_HOURS}h")
-        return cooldown_until
+        cooldown_loss_count = current_losses
+        send_cooldown(current_losses, config.COOLDOWN_HOURS)
+        logger.warning(f"Cooldown: {current_losses} losses → {config.COOLDOWN_HOURS}h")
+        return cooldown_until, cooldown_loss_count
+
+    # Reset cooldown counter when a win breaks the streak
+    if current_losses == 0:
+        cooldown_loss_count = 0
 
     # Seasonal filter checked per instrument in the scan loop below
 
@@ -120,7 +126,7 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
     # News filter
     if is_news_blocked():
         logger.info("News window — skipping signals")
-        return cooldown_until
+        return cooldown_until, cooldown_loss_count
 
     # Scan for new signals
     for symbol in config.INSTRUMENTS:
@@ -171,7 +177,7 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
 
-    return cooldown_until
+    return cooldown_until, cooldown_loss_count
 
 
 def main():
@@ -183,8 +189,19 @@ def main():
 
     data = DataFeed()
     tracker = ForwardTracker()
+
+    # Restore last signal times from open signals (prevents duplicates after restart)
     last_signal: dict[str, float] = {}
+    for sig in tracker.open_signals:
+        try:
+            from datetime import datetime as dt
+            ts = dt.fromisoformat(sig.timestamp).timestamp()
+            last_signal[sig.symbol] = ts
+        except Exception:
+            pass
+
     cooldown_until = 0.0
+    cooldown_loss_count = 0      # track which loss streak triggered cooldown
     last_summary_date = None
     last_weekly_date = None
 
@@ -196,7 +213,8 @@ def main():
         try:
             now = datetime.now(timezone.utc)
 
-            cooldown_until = run_cycle(data, last_signal, tracker, cooldown_until)
+            cooldown_until, cooldown_loss_count = run_cycle(
+                data, last_signal, tracker, cooldown_until, cooldown_loss_count)
 
             # Daily summary at 21:00 UTC
             if now.hour == 21 and last_summary_date != now.date():

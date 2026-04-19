@@ -24,6 +24,7 @@ RESULTS_FILE = "forward_results.csv"
 SIGNAL_FIELDS = [
     "id", "timestamp", "symbol", "direction", "quality",
     "entry", "sl", "tp", "lots", "risk_dollars", "rr", "reason", "status",
+    "highest", "lowest", "sl_moved_to_be",
 ]
 
 RESULT_FIELDS = [
@@ -80,6 +81,9 @@ class ForwardTracker:
                         tp=float(row["tp"]), lots=float(row["lots"]),
                         risk_dollars=float(row["risk_dollars"]),
                         rr=float(row["rr"]), reason=row["reason"],
+                        highest=float(row.get("highest", row["entry"])),
+                        lowest=float(row.get("lowest", row["entry"])),
+                        sl_moved_to_be=row.get("sl_moved_to_be", "False") == "True",
                     ))
 
     def _load_results(self):
@@ -115,24 +119,6 @@ class ForwardTracker:
 
             close, high, low = prices[sig.symbol]
             sig.bars_checked += 1
-            sig.highest = max(sig.highest, high)
-            sig.lowest = min(sig.lowest, low)
-
-            # Trailing SL: move to breakeven at 1:1 R:R
-            if config.TRAILING_SL_ENABLED and not sig.sl_moved_to_be:
-                risk = abs(sig.entry - sig.sl)
-                if sig.direction == "long" and sig.highest >= sig.entry + risk * config.TRAILING_SL_TRIGGER_RR:
-                    sig.sl = sig.entry
-                    sig.sl_moved_to_be = True
-                    from live.notifier import send_trailing_sl
-                    send_trailing_sl(sig.symbol, sig.direction, sig.sl)
-                    logger.info(f"Trailing SL → BE: {sig.id}")
-                elif sig.direction == "short" and sig.lowest <= sig.entry - risk * config.TRAILING_SL_TRIGGER_RR:
-                    sig.sl = sig.entry
-                    sig.sl_moved_to_be = True
-                    from live.notifier import send_trailing_sl
-                    send_trailing_sl(sig.symbol, sig.direction, sig.sl)
-                    logger.info(f"Trailing SL → BE: {sig.id}")
 
             hit = False
             reason = ""
@@ -160,6 +146,25 @@ class ForwardTracker:
             # Time stop: 20 bars (checked every 5 min, so 20 * 12 = 240 checks ≈ 20 hours)
             if not hit and sig.bars_checked >= 240:
                 hit, reason, exit_price = True, "TIME", close
+
+            # Trailing SL: move to BE at 1:1 — ONLY if no SL/TP hit this bar
+            # This ensures the original SL is used for the current bar's check
+            if not hit:
+                sig.highest = max(sig.highest, high)
+                sig.lowest = min(sig.lowest, low)
+                if config.TRAILING_SL_ENABLED and not sig.sl_moved_to_be:
+                    risk = abs(sig.entry - sig.sl)
+                    moved = False
+                    if sig.direction == "long" and sig.highest >= sig.entry + risk * config.TRAILING_SL_TRIGGER_RR:
+                        moved = True
+                    elif sig.direction == "short" and sig.lowest <= sig.entry - risk * config.TRAILING_SL_TRIGGER_RR:
+                        moved = True
+                    if moved:
+                        sig.sl = sig.entry
+                        sig.sl_moved_to_be = True
+                        from live.notifier import send_trailing_sl
+                        send_trailing_sl(sig.symbol, sig.direction, sig.sl)
+                        logger.info(f"Trailing SL → BE: {sig.id}")
 
             if hit:
                 self._close_signal(sig, exit_price, reason)
@@ -232,6 +237,8 @@ class ForwardTracker:
                 "sl": sig.sl, "tp": sig.tp, "lots": sig.lots,
                 "risk_dollars": sig.risk_dollars, "rr": sig.rr,
                 "reason": sig.reason, "status": "OPEN",
+                "highest": sig.highest, "lowest": sig.lowest,
+                "sl_moved_to_be": sig.sl_moved_to_be,
             })
 
     def _update_signal_status(self, sig_id: str, status: str):
@@ -243,6 +250,13 @@ class ForwardTracker:
         for row in rows:
             if row["id"] == sig_id:
                 row["status"] = status
+                # Also persist current SL and tracking state
+                matching = [s for s in self.open_signals if s.id == sig_id]
+                if matching:
+                    row["sl"] = matching[0].sl
+                    row["highest"] = matching[0].highest
+                    row["lowest"] = matching[0].lowest
+                    row["sl_moved_to_be"] = matching[0].sl_moved_to_be
         with open(SIGNALS_FILE, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=SIGNAL_FIELDS)
             w.writeheader()
