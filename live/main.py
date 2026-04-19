@@ -121,7 +121,7 @@ def run_cycle(data: DataFeed, last_signal: dict, tracker: ForwardTracker,
     # Weekend filter
     if is_weekend():
         logger.debug("Weekend — markets closed")
-        return cooldown_until
+        return cooldown_until, cooldown_loss_count
 
     # News filter
     if is_news_blocked():
