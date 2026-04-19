@@ -145,13 +145,13 @@ def run_phased():
                 elif p["side"] == "short" and bh >= p["sl"] and bl <= p["tp"]:
                     close_it, reason, ep = True, "SL", p["sl"]
 
-                # Time stop
-                time_limit = config.MONSTER_TIME_STOP if config.MONSTER_MODE else 20
+                # Time stop: monster trades hold longer
+                time_limit = config.MONSTER_TIME_STOP if p.get("is_monster") else 20
                 if not close_it and bars_held >= time_limit:
                     close_it, reason, ep = True, "Time", price
 
-                # Monster mode: partial TP at milestones
-                if config.MONSTER_MODE and not close_it:
+                # Monster trades: partial TP at milestones
+                if p.get("is_monster") and not close_it:
                     entry_risk = abs(p["entry"] - p.get("original_sl", p["sl"]))
                     if entry_risk > 0:
                         current_rr = ((price - p["entry"]) / entry_risk if p["side"] == "long"
@@ -269,6 +269,7 @@ def run_phased():
                         "sl": sig.sl, "tp": sig.tp, "original_sl": sig.sl,
                         "lots": lots, "bar": bar, "quality": sig.quality.value,
                         "highest": sig.entry, "lowest": sig.entry,
+                        "is_monster": sig.is_monster,
                     }
                     break
 

@@ -129,7 +129,11 @@ EXPECTED_PF = 3.56
 # MONSTER MODE — sniper trades with 1:5 to 1:10+ R:R
 # =============================================================================
 # When enabled: A/A+ only, weekly TP targets, hold for days, partial at milestones
-MONSTER_MODE = True
+# Both modes active: normal for flow, monster for snipers
+# Every signal is evaluated — A-grade with 1:4+ R:R → monster treatment
+# B-grade or low R:R → normal quick trade
+MONSTER_MODE = True        # enables monster TP/trailing for qualifying trades
+NORMAL_MODE = False        # B-grade hurts funded PnL — keep off
 
 # Quality gate — only these grades allowed in monster mode
 MONSTER_GRADES = ["A"]  # A+ rejection requirement hurts more than helps
