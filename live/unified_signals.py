@@ -260,9 +260,14 @@ def format_signal(sym: str, sig: dict, equity: float) -> str:
 # ============================================================
 # MAIN LOOP
 # ============================================================
-def scan_once(state: dict):
+def scan_once():
+    """Load state fresh from disk every scan — no cross-call pollution."""
     now = datetime.now(timezone.utc)
-    state = reset_state_if_new_day(state)
+    today = now.date().isoformat()
+    state = load_state()
+    if state.get("date") != today:
+        state = {"date": today, "sent": []}
+        save_state(state)
 
     for sym, cfg in INSTRUMENTS.items():
         try:
@@ -314,11 +319,9 @@ def main():
           f"Instruments: {', '.join(INSTRUMENTS.keys())}\n"
           "Mode: alert-only (manual execution)")
 
-    state = load_state()
-
     while True:
         try:
-            scan_once(state)
+            scan_once()
         except Exception:
             logger.error(f"Loop error:\n{traceback.format_exc()}")
             try:
