@@ -52,7 +52,7 @@ jobs:
             Type=simple
             User=root
             WorkingDirectory=/root/.local/share/.viper-v3
-            ExecStart=/root/.local/share/.viper-v3/venv/bin/python -u -m live.main
+            ExecStart=/root/.local/share/.viper-v3/venv/bin/python -u -m live.unified_signals
             EnvironmentFile=/root/.local/share/.viper-v3/.env
             Restart=on-failure
             RestartSec=30

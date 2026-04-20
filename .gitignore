@@ -5,3 +5,4 @@ __pycache__/
 *.csv
 *.html
 *.service
+live_state.json
