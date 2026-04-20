@@ -165,5 +165,13 @@ MONSTER_TRAIL_INTERVAL = 24
 # Cooldown between monster trades: 3 days minimum
 MONSTER_COOLDOWN_HOURS = 72
 
+# =============================================================================
+# SCALPER MODE — fast indicator signals, ATR SL, fixed 1:2 TP
+# =============================================================================
+SCALPER_SL_ATR_MULT = 1.5       # SL = 1.5 × 14-bar ATR
+SCALPER_RR = 2.0                # TP = RR × SL distance (1:2)
+SCALPER_TIME_STOP = 8           # close after 8 bars if unresolved
+SCALPER_RISK_PCT = 0.01         # 1% risk per trade
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"
