@@ -189,5 +189,12 @@ ORB_TIME_STOP = 5               # close after 5 bars post-entry
 ORB_RISK_PCT = 0.015            # 1.5% risk per trade — balances edge vs DD
 ORB_TREND_FILTER = True         # only take ORB breakouts in direction of 20-day SMA trend
 
+# =============================================================================
+# MEAN REVERSION (Connors-style, daily)
+# =============================================================================
+MR_SL_ATR_MULT = 1.5            # SL = 1.5 × 14-day ATR
+MR_TIME_STOP = 5                # daily bars max hold
+MR_RISK_PCT = 0.01              # 1% risk per trade
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"
