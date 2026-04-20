@@ -105,8 +105,10 @@ def run_bt(sym, tf):
                             pnl = raw-cfg["comm"]*cl
                             equity+=pnl
                             trades.append({"entry_time":str(pos["et"])[:19],"exit_time":str(ts)[:19],
-                                "entry_price":pos["entry"],"exit_price":tpx,"sl":pos["sl"],"tp":pos["tp"],
-                                "side":pos["side"],"pnl":round(pnl,2),"reason":f"Partial 1:{trr:.0f}","monster":True})
+                                "entry_price":pos["entry"],"exit_price":tpx,"sl":pos["osl"],"tp":pos["otp"],
+                                "side":pos["side"],"pnl":round(pnl,2),"reason":f"Partial 1:{trr:.0f}","monster":True,
+                                "quality":pos["quality"],"rr":pos["rr"],"sig_reason":pos["sig_reason"],
+                                "bias_info":pos["bias_info"],"lots_orig":pos["lots_orig"],"risk_usd":pos["risk_usd"]})
                             pos["lots"]-=cl; pos[pk]=True
                             if trr==3.0: pos["sl"]=pos["entry"]+erisk if pos["side"]=="long" else pos["entry"]-erisk
                             elif trr==5.0: pos["sl"]=pos["entry"]+erisk*3 if pos["side"]=="long" else pos["entry"]-erisk*3
@@ -116,8 +118,10 @@ def run_bt(sym, tf):
                 raw=((ep-pos["entry"]) if pos["side"]=="long" else (pos["entry"]-ep))*pos["lots"]*cfg["lot_mult"]
                 pnl=raw-cfg["comm"]*pos["lots"]; equity+=pnl
                 trades.append({"entry_time":str(pos["et"])[:19],"exit_time":str(ts)[:19],
-                    "entry_price":pos["entry"],"exit_price":ep,"sl":pos["osl"],"tp":pos["tp"],
-                    "side":pos["side"],"pnl":round(pnl,2),"reason":reason,"monster":pos.get("monster",False)})
+                    "entry_price":pos["entry"],"exit_price":ep,"sl":pos["osl"],"tp":pos["otp"],
+                    "side":pos["side"],"pnl":round(pnl,2),"reason":reason,"monster":pos.get("monster",False),
+                    "quality":pos["quality"],"rr":pos["rr"],"sig_reason":pos["sig_reason"],
+                    "bias_info":pos["bias_info"],"lots_orig":pos["lots_orig"],"risk_usd":pos["risk_usd"]})
                 if pos.get("monster"): monster_cooldown = i + int(config.MONSTER_COOLDOWN_HOURS)
                 pos=None
 
@@ -132,9 +136,11 @@ def run_bt(sym, tf):
                 if risk>=cfg["min_sl"]*0.3:
                     rd=min(equity*config.BASE_RISK_PCT*sig.confidence,equity*config.MAX_RISK_CAP)
                     lots=max(0.01,min(0.10,round(rd/(risk*cfg["lot_mult"]),2)))
-                    pos={"side":sig.direction,"entry":sig.entry,"sl":sig.sl,"tp":sig.tp,"osl":sig.sl,
-                         "lots":lots,"bar":i,"et":ts,"monster":sig.is_monster,
-                         "highest":sig.entry,"lowest":sig.entry}
+                    pos={"side":sig.direction,"entry":sig.entry,"sl":sig.sl,"tp":sig.tp,"osl":sig.sl,"otp":sig.tp,
+                         "lots":lots,"lots_orig":lots,"bar":i,"et":ts,"monster":sig.is_monster,
+                         "highest":sig.entry,"lowest":sig.entry,
+                         "quality":sig.quality.value,"rr":round(sig.rr,2),"sig_reason":sig.reason,
+                         "bias_info":sig.bias_info,"risk_usd":round(rd,2)}
 
         ur=0
         if pos: ur=((price-pos["entry"]) if pos["side"]=="long" else (pos["entry"]-price))*pos["lots"]*cfg["lot_mult"]
@@ -167,8 +173,26 @@ body {{ background:#0a0a0a; color:#ddd; font-family:'Segoe UI',system-ui,sans-se
 button {{ background:#222; color:#ddd; border:1px solid #333; padding:6px 16px; cursor:pointer; border-radius:4px; font-size:13px; }}
 button:hover {{ background:#333; }} button.active {{ background:#00d4aa; color:#000; }}
 .tf-btn.active {{ background:#2962ff; color:#fff; border-color:#2962ff; }}
-#chart {{ width:100%; height:calc(100vh - 180px); }}
+#main {{ display:flex; width:100%; height:calc(100vh - 100px); }}
+#left {{ flex:1 1 70%; display:flex; flex-direction:column; min-width:0; }}
+#chart {{ width:100%; flex:1; min-height:0; }}
 #equity {{ width:100%; height:120px; border-top:1px solid #222; }}
+#sidebar {{ flex:0 0 360px; background:#0d0d0d; border-left:1px solid #222; overflow-y:auto; padding:10px; }}
+#sidebar h3 {{ font-size:12px; color:#666; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }}
+.card {{ background:#141414; border:1px solid #222; border-radius:6px; padding:10px 12px; margin-bottom:8px; font-size:12px; line-height:1.55; cursor:pointer; transition:all 0.15s; font-family:'SF Mono','Consolas',monospace; }}
+.card:hover {{ border-color:#444; background:#181818; }}
+.card.active {{ border-color:#00d4aa; background:#152520; box-shadow:0 0 0 1px #00d4aa; }}
+.card.loss {{ border-left:3px solid #ff4757; }}
+.card.win {{ border-left:3px solid #00d4aa; }}
+.card .hdr {{ font-weight:600; margin-bottom:6px; font-size:13px; }}
+.card .row {{ display:flex; justify-content:space-between; color:#aaa; }}
+.card .row code {{ color:#fff; font-size:11px; }}
+.card .sep {{ height:1px; background:#222; margin:6px 0; }}
+.card .reason {{ color:#888; font-size:11px; margin-top:4px; }}
+.card .outcome {{ margin-top:6px; padding-top:6px; border-top:1px dashed #222; font-weight:600; }}
+.card .outcome.win {{ color:#00d4aa; }}
+.card .outcome.loss {{ color:#ff4757; }}
+.card .monster-tag {{ background:#f0b90b; color:#000; padding:1px 6px; border-radius:3px; font-size:10px; margin-left:4px; }}
 #info {{ position:fixed; bottom:130px; left:20px; background:rgba(0,0,0,0.9); padding:12px 16px; border-radius:6px; border:1px solid #333; font-size:13px; display:none; z-index:10; max-width:400px; }}
 </style></head><body>
 <div id="header">
@@ -197,15 +221,25 @@ button:hover {{ background:#333; }} button.active {{ background:#00d4aa; color:#
     <span id="speed" style="margin-left:12px">Speed: 5x</span>
     <span id="progress" style="margin-left:auto;color:#666"></span>
 </div>
-<div id="chart"></div>
-<div id="equity"></div>
+<div id="main">
+  <div id="left">
+    <div id="chart"></div>
+    <div id="equity"></div>
+  </div>
+  <div id="sidebar">
+    <h3 id="sidebar-title">Signals</h3>
+    <div id="cards"></div>
+  </div>
+</div>
 <div id="info"></div>
 <script>
+const SYM='{sym}';
 const allTF={all_tf_json};
 let allCandles={candles_json};
 const allTrades={trades_json};
 const allEquity={equity_json};
 let currentTF='1H',currentIdx=0,playing=false,speed=5,timer=null,tradeIdx=-1,allMarkers=[],tradeBoxes=[];
+let signals=[];
 
 const chartEl=document.getElementById('chart');
 const chart=LightweightCharts.createChart(chartEl,{{
@@ -239,20 +273,112 @@ allTrades.forEach(t=>{{
     t.exit_ct=snapTime(Math.floor(new Date(t.exit_time+'Z').getTime()/1000));
 }});
 
+function buildSignalTrades(){{
+    const m=new Map();
+    allTrades.forEach(t=>{{
+        if(!m.has(t.entry_time)){{
+            m.set(t.entry_time,{{entry_time:t.entry_time,entry_ct:t.entry_ct,exit_ct:t.exit_ct,
+                entry_price:t.entry_price,sl:t.sl,tp:t.tp,side:t.side,monster:t.monster,pnl:0,reason:''}});
+        }}
+        const s=m.get(t.entry_time);s.pnl+=t.pnl;
+        if(t.exit_ct>=s.exit_ct){{s.exit_ct=t.exit_ct;s.reason=t.reason;}}
+    }});
+    return [...m.values()];
+}}
+let signalTrades=buildSignalTrades();
+
+function buildSignals(){{
+    const g=new Map();
+    allTrades.forEach(t=>{{
+        if(!g.has(t.entry_time)){{
+            g.set(t.entry_time,{{entry_time:t.entry_time,entry_ct:t.entry_ct,entry_price:t.entry_price,
+                sl:t.sl,tp:t.tp,side:t.side,monster:t.monster,quality:t.quality,rr:t.rr,
+                sig_reason:t.sig_reason,bias_info:t.bias_info,lots_orig:t.lots_orig,
+                risk_usd:t.risk_usd,pnl:0,exits:[]}});
+        }}
+        const s=g.get(t.entry_time);s.pnl+=t.pnl;
+        s.exits.push({{reason:t.reason,pnl:t.pnl,exit_time:t.exit_time}});
+    }});
+    return [...g.values()].sort((a,b)=>b.entry_ct-a.entry_ct);
+}}
+
+function renderCards(){{
+    signals=buildSignals();
+    document.getElementById('sidebar-title').textContent=`Signals (${{signals.length}})`;
+    const html=signals.map((s,idx)=>{{
+        const emoji=s.side==='long'?'🟢':'🔴';
+        const dir=s.side==='long'?'BUY':'SELL';
+        const grade=s.quality==='A+'?'🌟':(s.quality==='A'?'⭐':'⚪');
+        const cls=s.pnl>=0?'win':'loss';
+        const sign=s.pnl>=0?'+':'';
+        const mtag=s.monster?'<span class="monster-tag">🎯 MONSTER</span>':'';
+        const exits=s.exits.map(e=>`${{e.reason}} ${{e.pnl>=0?'+':''}}$${{e.pnl.toFixed(2)}}`).join(' · ');
+        const icon=s.pnl>=0?'✅':'❌';
+        return `<div class="card ${{cls}}" data-idx="${{idx}}" data-ct="${{s.entry_ct}}" onclick="jumpToSignal(${{idx}})">
+            <div class="hdr">${{emoji}} ${{dir}} ${{SYM}} ${{grade}} ${{s.quality}}${{mtag}}</div>
+            <div class="row"><span>📍 Entry</span><code>${{s.entry_price.toFixed(2)}}</code></div>
+            <div class="row"><span>🛑 SL</span><code>${{s.sl.toFixed(2)}}</code></div>
+            <div class="row"><span>🎯 TP</span><code>${{s.tp.toFixed(2)}}</code></div>
+            <div class="sep"></div>
+            <div class="row"><span>📦 Lot</span><code>${{s.lots_orig.toFixed(2)}}</code></div>
+            <div class="row"><span>💰 Risk</span><code>$${{s.risk_usd.toFixed(0)}}</code></div>
+            <div class="row"><span>📊 R:R</span><code>1:${{s.rr.toFixed(1)}}</code></div>
+            <div class="sep"></div>
+            <div style="color:#888;font-size:11px">📊 ${{s.bias_info}}</div>
+            <div class="reason">🧠 ${{s.sig_reason}}</div>
+            <div style="color:#555;font-size:10px;margin-top:4px">⏰ ${{s.entry_time}} UTC</div>
+            <div class="outcome ${{cls}}">${{icon}} ${{sign}}$${{s.pnl.toFixed(2)}} — ${{exits}}</div>
+        </div>`;
+    }}).join('');
+    document.getElementById('cards').innerHTML=html;
+}}
+
+function highlightCard(idx,scroll){{
+    document.querySelectorAll('.card').forEach(c=>c.classList.remove('active'));
+    const card=document.querySelector(`.card[data-idx="${{idx}}"]`);
+    if(card){{card.classList.add('active');
+        if(scroll)card.scrollIntoView({{behavior:'smooth',block:'center'}});}}
+}}
+
+function findSignalByTime(t){{return signals.findIndex(s=>s.entry_ct===t);}}
+
+function jumpToSignal(idx){{
+    const s=signals[idx];tradeIdx=allTrades.findIndex(t=>t.entry_time===s.entry_time);
+    for(let i=0;i<allCandles.length;i++){{if(allCandles[i].time>=s.entry_ct){{
+        const end=Math.min(i+50,allCandles.length);
+        candleSeries.setData(allCandles.slice(0,end).map(c=>({{time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}})));
+        volSeries.setData(allCandles.slice(0,end).map(c=>({{time:c.time,value:c.volume,color:c.close>=c.open?'rgba(0,212,170,0.2)':'rgba(255,71,87,0.2)'}})));
+        currentIdx=end;allMarkers=[];
+        tradeBoxes.forEach(ln=>{{try{{chart.removeSeries(ln)}}catch(e){{}}}});tradeBoxes=[];
+        signalTrades.forEach(tr=>{{if(tr.entry_ct<=allCandles[currentIdx-1].time){{
+            allMarkers.push({{time:tr.entry_ct,position:tr.side==='long'?'belowBar':'aboveBar',
+                color:tr.pnl>0?'#00d4aa':'#ff4757',shape:tr.side==='long'?'arrowUp':'arrowDown',
+                text:(tr.monster?'🎯 ':'')+'$'+tr.pnl.toFixed(2)}});
+            if(tr.exit_ct<=allCandles[currentIdx-1].time){{drawBox(tr);}}
+        }}}});
+        allTrades.forEach(tr=>{{if(tr.exit_ct<=allCandles[currentIdx-1].time){{
+            allMarkers.push({{time:tr.exit_ct,position:'inBar',color:tr.pnl>0?'#00d4aa':'#ff4757',
+                shape:'circle',text:'✕ '+tr.reason+' $'+tr.pnl.toFixed(2)}});}}}});
+        allMarkers.sort((a,b)=>a.time-b.time);candleSeries.setMarkers(allMarkers);
+        chart.timeScale().scrollToPosition(-5,false);highlightCard(idx,true);break;}}}}
+}}
+
 function addBar(idx){{
     if(idx>=allCandles.length)return;const c=allCandles[idx],t=c.time;
     candleSeries.update({{time:t,open:c.open,high:c.high,low:c.low,close:c.close}});
     volSeries.update({{time:t,value:c.volume,color:c.close>=c.open?'rgba(0,212,170,0.2)':'rgba(255,71,87,0.2)'}});
     if(idx<allEquity.length)eqLine.update({{time:t,value:allEquity[idx].eq}});
-    allTrades.forEach(tr=>{{
+    signalTrades.forEach(tr=>{{
         if(tr.entry_ct===t){{
-            const isM=tr.monster;
             allMarkers.push({{time:t,position:tr.side==='long'?'belowBar':'aboveBar',
                 color:tr.pnl>0?'#00d4aa':'#ff4757',
                 shape:tr.side==='long'?'arrowUp':'arrowDown',
-                text:(isM?'🎯 ':'')+(tr.side==='long'?'▲':'▼')+' $'+tr.pnl.toFixed(2)+' '+tr.reason}});
+                text:(tr.monster?'🎯 ':'')+(tr.side==='long'?'▲':'▼')+' $'+tr.pnl.toFixed(2)}});
             showInfo(tr,'ENTRY');drawBox(tr);
+            const sidx2=findSignalByTime(tr.entry_ct);if(sidx2>=0)highlightCard(sidx2,true);
         }}
+    }});
+    allTrades.forEach(tr=>{{
         if(tr.exit_ct===t){{
             allMarkers.push({{time:t,position:'inBar',
                 color:tr.pnl>0?'#00d4aa':'#ff4757',shape:'circle',
@@ -261,26 +387,27 @@ function addBar(idx){{
     }});
     allMarkers.sort((a,b)=>a.time-b.time);candleSeries.setMarkers(allMarkers);
     document.getElementById('progress').textContent=(idx+1)+'/'+allCandles.length;
+    chart.timeScale().setVisibleLogicalRange({{from:Math.max(0,idx-180),to:idx+20}});
 }}
 
 function drawBox(tr){{
     const t1=tr.entry_ct,t2=tr.exit_ct;
-    // TP zone
-    const tpFill=chart.addAreaSeries({{
-        topColor:tr.side==='long'?'rgba(0,150,120,0.20)':'rgba(180,40,50,0.20)',
-        bottomColor:tr.side==='long'?'rgba(0,150,120,0.08)':'rgba(180,40,50,0.08)',
-        lineColor:'rgba(0,0,0,0)',lineWidth:0,lastValueVisible:false,priceLineVisible:false}});
-    const slFill=chart.addAreaSeries({{
-        topColor:tr.side==='long'?'rgba(180,40,50,0.08)':'rgba(0,150,120,0.08)',
-        bottomColor:tr.side==='long'?'rgba(180,40,50,0.20)':'rgba(0,150,120,0.20)',
-        lineColor:'rgba(0,0,0,0)',lineWidth:0,lastValueVisible:false,priceLineVisible:false}});
-    if(tr.side==='long'){{
-        tpFill.setData([{{time:t1,value:tr.tp}},{{time:t2,value:tr.tp}}]);
-        slFill.setData([{{time:t1,value:tr.entry_price}},{{time:t2,value:tr.entry_price}}]);
-    }}else{{
-        tpFill.setData([{{time:t1,value:tr.entry_price}},{{time:t2,value:tr.entry_price}}]);
-        slFill.setData([{{time:t1,value:tr.sl}},{{time:t2,value:tr.sl}}]);
-    }}
+    // TP zone (bounded between entry and TP)
+    const tpFill=chart.addBaselineSeries({{
+        baseValue:{{type:'price',price:tr.entry_price}},
+        topFillColor1:'rgba(0,212,170,0.22)',topFillColor2:'rgba(0,212,170,0.22)',
+        bottomFillColor1:'rgba(0,212,170,0.22)',bottomFillColor2:'rgba(0,212,170,0.22)',
+        topLineColor:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',
+        lineWidth:0,lastValueVisible:false,priceLineVisible:false}});
+    tpFill.setData([{{time:t1,value:tr.tp}},{{time:t2,value:tr.tp}}]);
+    // SL zone (bounded between entry and SL)
+    const slFill=chart.addBaselineSeries({{
+        baseValue:{{type:'price',price:tr.entry_price}},
+        topFillColor1:'rgba(255,71,87,0.22)',topFillColor2:'rgba(255,71,87,0.22)',
+        bottomFillColor1:'rgba(255,71,87,0.22)',bottomFillColor2:'rgba(255,71,87,0.22)',
+        topLineColor:'rgba(0,0,0,0)',bottomLineColor:'rgba(0,0,0,0)',
+        lineWidth:0,lastValueVisible:false,priceLineVisible:false}});
+    slFill.setData([{{time:t1,value:tr.sl}},{{time:t2,value:tr.sl}}]);
     // Entry/SL/TP lines
     for(const[val,col] of [[tr.entry_price,'#fff'],[tr.sl,'#ff4757'],[tr.tp,'#00d4aa']]){{
         const ln=chart.addLineSeries({{color:col,lineWidth:1,lineStyle:2,lastValueVisible:false,priceLineVisible:false}});
@@ -313,7 +440,7 @@ function skipTrade(dir){{tradeIdx+=dir;if(tradeIdx<0)tradeIdx=0;
         const end=Math.min(i+50,allCandles.length);
         candleSeries.setData(allCandles.slice(0,end).map(c=>({{time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}})));
         currentIdx=end;allMarkers=[];
-        allTrades.forEach(tr=>{{if(tr.entry_ct<=allCandles[currentIdx-1].time){{
+        signalTrades.forEach(tr=>{{if(tr.entry_ct<=allCandles[currentIdx-1].time){{
             allMarkers.push({{time:tr.entry_ct,position:tr.side==='long'?'belowBar':'aboveBar',
                 color:tr.pnl>0?'#00d4aa':'#ff4757',shape:tr.side==='long'?'arrowUp':'arrowDown',
                 text:(tr.monster?'🎯 ':'')+'$'+tr.pnl.toFixed(2)}});}}
@@ -327,12 +454,16 @@ function switchTF(tf){{currentTF=tf;allCandles=allTF[tf];
     candleSeries.setData(allCandles.map(c=>({{time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}})));
     volSeries.setData(allCandles.map(c=>({{time:c.time,value:c.volume,color:c.close>=c.open?'rgba(0,212,170,0.2)':'rgba(255,71,87,0.2)'}})));
     allTrades.forEach(t=>{{t.entry_ct=snapTime(Math.floor(new Date(t.entry_time+'Z').getTime()/1000));
-        t.exit_ct=snapTime(Math.floor(new Date(t.exit_time+'Z').getTime()/1000));drawBox(t);}});
-    allMarkers=[];allTrades.forEach(t=>{{allMarkers.push({{time:t.entry_ct,position:t.side==='long'?'belowBar':'aboveBar',
+        t.exit_ct=snapTime(Math.floor(new Date(t.exit_time+'Z').getTime()/1000));}});
+    signalTrades=buildSignalTrades();
+    signalTrades.forEach(t=>drawBox(t));
+    allMarkers=[];signalTrades.forEach(t=>{{allMarkers.push({{time:t.entry_ct,position:t.side==='long'?'belowBar':'aboveBar',
         color:t.pnl>0?'#00d4aa':'#ff4757',shape:t.side==='long'?'arrowUp':'arrowDown',
-        text:(t.monster?'🎯 ':'')+'$'+t.pnl.toFixed(2)+' '+t.reason}});}});
+        text:(t.monster?'🎯 ':'')+'$'+t.pnl.toFixed(2)}});}});
+    allTrades.forEach(t=>{{allMarkers.push({{time:t.exit_ct,position:'inBar',color:t.pnl>0?'#00d4aa':'#ff4757',
+        shape:'circle',text:'✕ '+t.reason}});}});
     allMarkers.sort((a,b)=>a.time-b.time);candleSeries.setMarkers(allMarkers);
-    chart.timeScale().fitContent();currentIdx=allCandles.length;}}
+    chart.timeScale().fitContent();currentIdx=allCandles.length;renderCards();}}
 
 function showAll(){{playing=false;clearInterval(timer);document.getElementById('playBtn').textContent='▶ Play';
     tradeBoxes.forEach(s=>{{try{{chart.removeSeries(s)}}catch(e){{}}}});tradeBoxes=[];
@@ -340,17 +471,19 @@ function showAll(){{playing=false;clearInterval(timer);document.getElementById('
     volSeries.setData(allCandles.map(c=>({{time:c.time,value:c.volume,color:c.close>=c.open?'rgba(0,212,170,0.2)':'rgba(255,71,87,0.2)'}})));
     eqLine.setData(allEquity.map(e=>({{time:e.time,value:e.eq}})));
     currentIdx=allCandles.length;allMarkers=[];
-    allTrades.forEach(t=>{{allMarkers.push({{time:t.entry_ct,position:t.side==='long'?'belowBar':'aboveBar',
+    signalTrades.forEach(t=>{{allMarkers.push({{time:t.entry_ct,position:t.side==='long'?'belowBar':'aboveBar',
         color:t.pnl>0?'#00d4aa':'#ff4757',shape:t.side==='long'?'arrowUp':'arrowDown',
-        text:(t.monster?'🎯 ':'')+'$'+t.pnl.toFixed(2)+' '+t.reason}});
-        allMarkers.push({{time:t.exit_ct,position:'inBar',color:t.pnl>0?'#00d4aa':'#ff4757',
-        shape:'circle',text:'✕ '+t.reason}});drawBox(t);}});
+        text:(t.monster?'🎯 ':'')+'$'+t.pnl.toFixed(2)}});drawBox(t);}});
+    allTrades.forEach(t=>{{allMarkers.push({{time:t.exit_ct,position:'inBar',color:t.pnl>0?'#00d4aa':'#ff4757',
+        shape:'circle',text:'✕ '+t.reason+' $'+t.pnl.toFixed(2)}});}});
     allMarkers.sort((a,b)=>a.time-b.time);candleSeries.setMarkers(allMarkers);
     chart.timeScale().fitContent();document.getElementById('progress').textContent=allCandles.length+'/'+allCandles.length;}}
 
 window.addEventListener('resize',()=>{{chart.resize(chartEl.clientWidth,chartEl.clientHeight);
     eqChart.resize(eqEl.clientWidth,eqEl.clientHeight);}});
-currentIdx=0;allMarkers=[];document.getElementById('progress').textContent='Press Play or Show All';
+window.addEventListener('keydown',e=>{{if(e.code==='Space'&&e.target.tagName!=='INPUT'){{e.preventDefault();togglePlay();}}}});
+currentIdx=0;allMarkers=[];renderCards();
+document.getElementById('progress').textContent='Press Play or Show All';
 </script></body></html>"""
     return html
 
@@ -358,18 +491,27 @@ currentIdx=0;allMarkers=[];document.getElementById('progress').textContent='Pres
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol", default="SP500")
+    parser.add_argument("--days", type=int, default=0, help="Filter to last N days (0=all)")
     args = parser.parse_args()
     sym = args.symbol
 
     if sym not in config.INSTRUMENTS:
         print(f"Available: {', '.join(config.INSTRUMENTS.keys())}"); return
 
-    print(f"\n  VIPER v3 — Generating {sym} monster replay...\n")
+    print(f"\n  VIPER v3 — Generating {sym} monster replay{' (last '+str(args.days)+'d)' if args.days else ''}...\n")
     cfg = config.INSTRUMENTS[sym]
     tf = fetch(cfg["ticker"])
 
     print(f"  Running backtest...", end=" ", flush=True)
     trades, eq_data, d1h = run_bt(sym, tf)
+
+    if args.days > 0:
+        cutoff = tf["1h"].index[-1] - pd.Timedelta(days=args.days)
+        cutoff_str = str(cutoff)[:19]
+        trades = [t for t in trades if t["entry_time"] >= cutoff_str]
+        eq_data = [e for e in eq_data if e["ts"] >= cutoff]
+        tf = {k: v[v.index >= cutoff] for k, v in tf.items()}
+
     wins = sum(1 for t in trades if t["pnl"] > 0)
     pnl = sum(t["pnl"] for t in trades)
     monsters = sum(1 for t in trades if t.get("monster"))
@@ -384,8 +526,8 @@ def main():
                  "close":round(float(r["close"]),6),"volume":round(float(r.get("volume",0)),2)}
                 for ts, r in d.iterrows()]
 
-    all_tf = {"1H": to_candles(tf["1h"],3000), "4H": to_candles(tf["4h"],1000),
-              "1D": to_candles(tf["daily"],500), "1W": to_candles(tf["weekly"],200)}
+    all_tf = {"1H": to_candles(tf["1h"],20000), "4H": to_candles(tf["4h"],5000),
+              "1D": to_candles(tf["daily"],1000), "1W": to_candles(tf["weekly"],300)}
 
     candle_times = [c["time"] for c in all_tf["1H"]]
     def snap(ts_str):
@@ -405,7 +547,8 @@ def main():
         eq_json.append({"time": int(t.timestamp()), "eq": e["eq"]})
 
     html = generate_html(sym, all_tf, trades, eq_json)
-    fname = f"replay_{sym.lower()}.html"
+    suffix = f"_{args.days}d" if args.days else ""
+    fname = f"replay_{sym.lower()}{suffix}.html"
     with open(fname, "w") as f:
         f.write(html)
 
