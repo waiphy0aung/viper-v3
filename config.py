@@ -173,5 +173,20 @@ SCALPER_RR = 2.0                # TP = RR × SL distance (1:2)
 SCALPER_TIME_STOP = 8           # close after 8 bars if unresolved
 SCALPER_RISK_PCT = 0.01         # 1% risk per trade
 
+# =============================================================================
+# ASIAN SESSION BREAKOUT (for GOLD)
+# =============================================================================
+# Structural edge: low-vol Asian accumulation → London liquidity push
+ASIAN_TP_MULT = 1.5             # TP = Asian range × this (1.5x range)
+ASIAN_TIME_STOP = 8             # close after 8 bars (cover London session)
+ASIAN_RISK_PCT = 0.01           # 1% risk per trade
+
+# =============================================================================
+# OPENING RANGE BREAKOUT (for SP500/indices)
+# =============================================================================
+ORB_TP_MULT = 2.0               # TP = ORB size × 2 (1:2 R:R with SL at opposite end)
+ORB_TIME_STOP = 5               # close after 5 bars post-entry
+ORB_RISK_PCT = 0.01             # 1% risk per trade
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"
