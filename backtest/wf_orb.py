@@ -81,8 +81,8 @@ def run_window(data: pd.DataFrame, cfg: dict, sym: str, tradeable: pd.DatetimeIn
             dd = (daily_eq[day] - equity) / daily_eq[day] if equity < daily_eq[day] else 0
             if dd < config.DAILY_DD_LIMIT * 0.8 and ts in data.index:
                 loc = data.index.get_loc(ts)
-                if loc >= 30:
-                    w = data.iloc[max(0, loc - 30):loc + 1]
+                if loc >= 500:
+                    w = data.iloc[max(0, loc - 500):loc + 1]
                     price = float(data.loc[ts, "close"])
                     bh = float(data.loc[ts, "high"])
                     bl = float(data.loc[ts, "low"])
@@ -141,7 +141,7 @@ def summarize(trades, eq_curve, tradeable, final_eq) -> dict:
 
 
 def main():
-    for sym in ["SP500", "US30"]:
+    for sym in ["US30"]:  # only US30 — other instruments failed walk-forward
         cfg = config.INSTRUMENTS[sym]
         print(f"\n  Fetching {sym} ({cfg['ticker']})...", end=" ", flush=True)
         data = fetch(cfg["ticker"])

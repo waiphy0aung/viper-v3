@@ -186,7 +186,8 @@ ASIAN_RISK_PCT = 0.01           # 1% risk per trade
 # =============================================================================
 ORB_TP_MULT = 2.0               # TP = ORB size × 2 (1:2 R:R with SL at opposite end)
 ORB_TIME_STOP = 5               # close after 5 bars post-entry
-ORB_RISK_PCT = 0.01             # 1% risk per trade
+ORB_RISK_PCT = 0.015            # 1.5% risk per trade — balances edge vs DD
+ORB_TREND_FILTER = True         # only take ORB breakouts in direction of 20-day SMA trend
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = "viper.log"

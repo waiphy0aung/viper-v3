@@ -64,6 +64,7 @@ def generate_orb_signal(
     """
     ORB signal — fires during the NY session after the ORB window closes.
     Entry window: 14:00 - 18:00 UTC (4 hours after ORB)
+    Filtered: only in direction of daily trend (close vs 20-bar SMA of daily closes).
     """
     cfg = config.INSTRUMENTS.get(symbol, {})
     spread = cfg.get("spread", 1.0)
@@ -84,6 +85,17 @@ def generate_orb_signal(
         direction = "short"
     else:
         return None
+
+    # Trend filter: daily close vs 20-day SMA (resample 1H → daily)
+    if config.ORB_TREND_FILTER:
+        daily = df_1h["close"].resample("1D").last().dropna()
+        if len(daily) >= 20:
+            sma20 = float(daily.tail(20).mean())
+            last_close = float(daily.iloc[-1])
+            if direction == "long" and last_close < sma20:
+                return None
+            if direction == "short" and last_close > sma20:
+                return None
 
     buffer = rng.size * 0.1
     if direction == "long":
